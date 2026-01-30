@@ -170,9 +170,7 @@ pnpm db:migrate
 
 You should see output indicating the migration was applied.
 
-<div class="primer-spec-callout info" markdown="1">
 **Note:** Migration files must be numbered sequentially (001, 002, 003, etc.) and each number can only be used once. This is used to determine the ordering of individual migrations.
-</div>
 
 ## Part 2: Generating Types with kysely-codegen
 
@@ -185,9 +183,7 @@ pnpm db:generate
 ```
 You should see a new `SudokuPuzzles` interface alongside `Players`!
 
-<div class="primer-spec-callout danger" markdown="1">
 **Never edit `schema.d.ts` manually!** It is auto-generated and your changes will be overwritten. If you need different types, create them in your database layer files by transforming the generated types.
-</div>
 
 ### The Workflow
 
@@ -435,9 +431,7 @@ export async function seed(db: Kysely<Schema>): Promise<void> {
 pnpm --filter database db:seed
 ```
 
-<div class="primer-spec-callout info" markdown="1">
 **Note:** Unlike migrations, seeds don't track whether they've been run before. Running `db:seed` again would insert duplicate puzzles. In a real application, you might add logic to check if data already exists, or clear the table first. For this lab, just run the seed once after running your migrations.
-</div>
 
 You should see output indicating the puzzles were loaded!
 
