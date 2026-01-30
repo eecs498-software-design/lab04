@@ -2,7 +2,7 @@
   "name": "p2-new",
   "private": true,
   "scripts": {
-    "simulate": "tsx restaurant.ts"
+    "simulate": "tsx src/restaurant.ts"
   },
   "devDependencies": {
     "@types/node": "^25.0.3",

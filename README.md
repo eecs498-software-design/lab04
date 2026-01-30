@@ -17,6 +17,12 @@ From a terminal, run `pnpm install`. NOT `npm install` -- we are using pnpm now 
 
 Take a look at the code in the `src/` directory, which implements a simple restaurant simulation. We would like to know if our restaurant can handle a certain flow of patrons without making them wait too long.
 
+You can run the code with:
+
+```console
+pnpm simulate
+```
+
 The code is organized as follows:
 - `restaurant.ts`: Classes to represent the restaurant and simulation code
 - `party-generator.ts`: A class to randomly generate parties of patrons that arrive at the restaurant

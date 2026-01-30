@@ -43,18 +43,18 @@ export class PartyGenerator {
     const members: Person[] = [];
 
     for (let i = 0; i < partySize; i++) {
-      const diningTime = new DiningTime(this.config.minDiningTime, this.config.maxDiningTime);
       const person = new Person(
         this.nextPatronId,
         `Guest ${this.nextPatronId}`,
-        20 + this.randomizer.range(40),
-        diningTime,
-        this.randomizer
+        20 + this.randomizer.range(40)
       );
       members.push(person);
       this.nextPatronId++;
     }
-
-    return new Party(members);
+    
+    const diningTime = new DiningTime(this.config.minDiningTime, this.config.maxDiningTime);
+    const party = new Party(members, diningTime, this.randomizer);
+    members.forEach(member => member.setParty(party));
+    return party;
   }
 }
