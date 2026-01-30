@@ -372,11 +372,14 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { DB as Schema } from '../schema'; // types generated from kysely-codegen
+
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export async function seed(db: Kysely<unknown>): Promise<void> {
-  // Read the puzzles file
-  const filePath = join(__dirname, '..', '..', '..', '..', 'sudoku_puzzles.txt');
+export async function seed(db: Kysely<Schema>): Promise<void> {
+  // Read the puzzles file, presumed to be in the seeds directory
+  const filePath = join(__dirname, 'sudoku_puzzles.txt');
   const content = readFileSync(filePath, 'utf-8');
   const lines = content.trim().split('\n');
 
@@ -385,6 +388,14 @@ export async function seed(db: Kysely<unknown>): Promise<void> {
   // Build all puzzle objects
   const puzzles = lines.map(line => {
     const [difficultyStr, starting_board, solution_board] = line.split(' ');
+
+    if (!difficultyStr || !starting_board || !solution_board) {
+      throw new Error(`Invalid puzzle line: ${line}`);
+    }
+    if (starting_board.length !== 81 || solution_board.length !== 81) {
+      throw new Error(`Invalid board length in line: ${line}`);
+    }
+
     return {
       difficulty: parseInt(difficultyStr, 10),
       starting_board,
@@ -392,7 +403,8 @@ export async function seed(db: Kysely<unknown>): Promise<void> {
     };
   });
 
-  // Insert in batches for better performance
+  // Insert in batches for better performance (not really needed
+  // on our relatively small dataset, but good practice)
   const BATCH_SIZE = 100;
   for (let i = 0; i < puzzles.length; i += BATCH_SIZE) {
     const batch = puzzles.slice(i, i + BATCH_SIZE);
