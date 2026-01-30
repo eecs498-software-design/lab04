@@ -8,6 +8,10 @@ EECS 498 APSD: Database Tutorial
 
 In this lab, you'll learn the fundamentals of working with an SQLite database in a TypeScript project using Kysely, a type-safe SQL query builder. These pragmatics will directly apply to your course projects, especially as the system becomes more complex and needs to manage persistent data.
 
+## Setup
+
+If you haven't already, make a clone of your project group repository released with project 2. Go through the setup instructions in the project spec, including installing `pnpm` (we're switching to a new package manager away from `npm`) and then installing project dependencies with `pnpm install`.
+
 ## Background: What is a Database?
 
 A **database** is a system for storing, organizing, and retrieving structured data. While you could just store and retrieve serialized data with plain old files, it's quite cumbersome. On the other hand, modern database systems are *reliable, highly efficient, and provide clean separation of concerns in an overall system*. Many real-world applications rely on persistent data (e.g., user accounts, game scores, settings, etc.), and databases are ubiquitous in software development.
@@ -85,9 +89,9 @@ packages/database/
 │       └── 001_template.ts  # Migration files that evolve the database schema over time
 ```
 
-Open `players.ts` in the `src` folder to see examples of database layer functions. Notice how each function:
+Open `players.ts` in the `packages/database/src` folder to see examples of database layer functions. Don't worry about the exact details for now, but observe that each function:
 - Has a clear, descriptive name (`getPlayerById`, `insertPlayer`, etc.)
-- Uses Kysely to build and execute a query
+- Encapsulates the details of how a database query is built and executed
 - Returns structurally typed data that the rest of your application can understand
 
 ## Part 1: Understanding Migrations
@@ -103,17 +107,27 @@ Each migration has:
 - An **up** function: applies the change (e.g., creates a table)
 - A **down** function: reverses the change (e.g., drops the table)
 
-Open `001_template.ts` in the migrations folder in your project 2 repository. Although you may not have worked with Kysely or SQL before, observe that it creates the `players` table with two columns, both of which are required data for an entry. The `player_id` column is the primary key, meaning it uniquely identifies each row.
+Open `001_template.ts` in the `packages/database/src/migrations` folder in your project 2 repository. Although you may not have worked with Kysely or SQL before, observe that it creates the `players` table with two columns, both of which are required data for an entry. The `player_id` column is the primary key, meaning it uniquely identifies each row.
 
 ### Running Migrations
 
-From the `packages/database` directory, you can run migrations with:
+From the `packages/database` directory, you can run migrations (from the top level of your repository) with:
 
 ```bash
 pnpm db:migrate
 ```
 
-This runs all pending migrations. Kysely tracks which migrations have already been applied in a special `kysely_migration` table, so each migration only runs once.
+This runs all pending migrations on the current database instance. Kysely tracks which migrations have already been applied in a special `kysely_migration` table, so each migration only runs if it hasn't already. Try running `pnpm db:migrate` a few times again and observe that it says no new migrations are found.
+
+Hypothetically, if you wanted to revert the last migration, you could run:
+
+```bash
+pnpm db:migrate:down
+```
+
+For example, if you're playing around with potential changes to the database schema and realize you made a mistake, you can take the most recent migration down. However, be careful with this command in practice - reverting migrations can lead to data loss if the migration involved dropping tables or columns. You also almost never want to do this after migrations have been committed to version control or applied to production databases, as it can lead to inconsistencies.
+
+If you want, you can also try deleting the entire `database.sqlite` file and running `pnpm db:migrate` again to see the migrations applied from scratch. (Don't do this if you have already started working on the project and have stuff in the database you want to keep!)
 
 ### Exercise 1.1: Create Your First Migration
 
@@ -136,8 +150,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     .createTable("sudoku_puzzles")
     .addColumn("puzzle_id", "integer", (col) => col.notNull().primaryKey().autoIncrement())
     .addColumn("difficulty", "integer", (col) => col.notNull())
-    .addColumn("starting_board", "varchar(81)", (col) => col.notNull())
-    .addColumn("solution_board", "varchar(81)", (col) => col.notNull())
+    .addColumn("starting_board", "char(81)", (col) => col.notNull())
+    .addColumn("solution_board", "char(81)", (col) => col.notNull())
     .execute()
 }
 
@@ -162,35 +176,14 @@ You should see output indicating the migration was applied.
 
 ## Part 2: Generating Types with kysely-codegen
 
-After changing your schema with migrations, you need to regenerate the TypeScript types so Kysely knows about your new tables and columns.
+After changing your schema with migrations, you need to regenerate the TypeScript types so Kysely knows about your new tables and columns. Open `schema.d.ts` in the `packages/database/src` folder. This file contains interfaces representing your database schema. Right now, it just has one interface for the `Players` table from the project starter code.
 
-**Run the codegen:**
+Run the following from the top level of your project repository:
 
 ```bash
-cd packages/database
 pnpm db:generate
 ```
-
-Now open `schema.d.ts` in the `src` folder. You should see a new `SudokuPuzzles` interface alongside `Players`:
-
-```typescript
-export interface SudokuPuzzles {
-  puzzle_id: Generated<number>;
-  difficulty: number;
-  starting_board: string;
-  solution_board: string;
-}
-
-export interface Players {
-  display_name: string;
-  player_id: string;
-}
-
-export interface DB {
-  sudoku_puzzles: SudokuPuzzles;
-  players: Players;
-}
-```
+You should see a new `SudokuPuzzles` interface alongside `Players`!
 
 <div class="primer-spec-callout danger" markdown="1">
 **Never edit `schema.d.ts` manually!** It is auto-generated and your changes will be overwritten. If you need different types, create them in your database layer files by transforming the generated types.
@@ -277,7 +270,7 @@ const completedPuzzles = await DATABASE.selectFrom('puzzle_completions')
 
 
 
-## Part 4: Type Safety with Selectable, Insertable, and Updateable
+### Type Safety with Selectable, Insertable, and Updateable
 
 Kysely provides utility types that help you write type-safe database layer functions. These types come from Kysely and are applied to your generated schema types. The table below summarizes the main ones, and you can follow examples in the starter code.
 
@@ -288,13 +281,14 @@ Kysely provides utility types that help you write type-safe database layer funct
 | `Updateable<T>` | Represents data for an UPDATE (all columns optional) |
 | `UpdateableByPK<T, K>` | We actually added this one. Like UPDATE, but doesn't allow the primary key K to be optional |
 
+### Part 4: Implementing the Sudoku Puzzles Database Layer
 
 ### Exercise 4.1: Create the Sudoku Puzzles Database Layer
 
-Create a new file `sudoku_puzzles.ts` in the `src` folder:
+Create a new file `sudoku_puzzles.ts` in the `src` folder based on the template below. Implement the two TODO functions to get puzzles by difficulty and insert new puzzles.
 
 ```typescript
-import { Insertable } from 'kysely';
+import { Insertable, sql } from 'kysely';
 import { DATABASE } from './database';
 import { DB as Schema } from './schema';
 
@@ -312,21 +306,14 @@ export async function getPuzzleById(puzzle_id: number) {
  * Get all puzzles of a specific difficulty.
  */
 export async function getPuzzlesByDifficulty(difficulty: number) {
-  return DATABASE.selectFrom('sudoku_puzzles')
-    .selectAll()
-    .where('difficulty', '=', difficulty)
-    .execute();
+  // TODO: implement me!
 }
 
 /**
- * Get a random puzzle, optionally filtered by difficulty.
+ * Get a random puzzle.
  */
-export async function getRandomPuzzle(difficulty?: number) {
+export async function getRandomPuzzle() {
   let query = DATABASE.selectFrom('sudoku_puzzles').selectAll();
-  
-  if (difficulty !== undefined) {
-    query = query.where('difficulty', '=', difficulty);
-  }
   
   // SQLite's RANDOM() function for random ordering
   return query.orderBy(sql`RANDOM()`).executeTakeFirst();
@@ -336,25 +323,11 @@ export async function getRandomPuzzle(difficulty?: number) {
  * Insert a new puzzle into the database.
  */
 export async function insertPuzzle(puzzle: Insertable<Schema['sudoku_puzzles']>) {
-  return DATABASE.insertInto('sudoku_puzzles')
-    .values(puzzle)
-    .execute();
-}
-
-/**
- * Get the count of puzzles by difficulty level.
- */
-export async function getPuzzleCountByDifficulty() {
-  return DATABASE.selectFrom('sudoku_puzzles')
-    .select(['difficulty'])
-    .select(db => db.fn.count<number>('puzzle_id').as('count'))
-    .groupBy('difficulty')
-    .orderBy('difficulty')
-    .execute();
+  // TODO: implement me!
 }
 ```
 
-Don't forget to export these functions from your package! Add to `package.json` in the database package:
+Don't forget to export these functions from your package! Add an export for `sudoku_puzzles` in the `packages/database/package.json`. Make sure to get the right `package.json` file - there are several, and you don't want this in the top-level one.
 
 ```json
 {
@@ -367,9 +340,11 @@ Don't forget to export these functions from your package! Add to `package.json` 
 
 ### Exercise 4.2: Load Puzzles Using a Seed File
 
-Now let's load the puzzles from `sudoku_puzzles.txt` into the database. Kysely supports **seed files**—scripts that populate your database with initial data. Seeds are similar to migrations but are meant for data rather than schema changes.
+Now let's load the puzzles from `sudoku_puzzles.txt` into the database. If you don't have that file, copy it from the project 1 distribution or from the lab 4 repository.
 
-**Step 1:** First, enable seeds in `kysely.config.ts` by uncommenting and updating the seeds configuration:
+Kysely supports **seed files**, scripts that populate your database with initial data. While migrations are for the database's schema (i.e. the "shape" of the data), seeds are for the actual data itself. Seeds are also critically different in that they're always dependent on the current schema, whereas migrations evolve the schema itself. This means that you might need to update seeds if the schema changes - if we added some new metadata to each sudoku puzzle, that would involve a database migration to create a new column for it and updates to the seed to repopulate that data.
+
+**Step 1:** First, enable seeds in `kysely.config.ts` by uncommenting and updating the seeds configuration. IMPORTANT - also make sure to adjust the seeds directory to `src/seeds`, not just `seeds`:
 
 ```typescript
 import { SqliteDialect } from 'kysely'
@@ -389,7 +364,7 @@ export default defineConfig({
 })
 ```
 
-**Step 2:** Create the seeds folder and a seed file `src/seeds/001_sudoku_puzzles.ts`:
+**Step 2:** Within the `packages/database/src` folder, create a nested `seeds` folder. Copy the `sudoku_puzzles.txt` file into the `seeds` folder, and alongside it, create a new file `001_sudoku_puzzles.ts`:
 
 ```typescript
 import { Kysely } from 'kysely';
@@ -430,7 +405,7 @@ export async function seed(db: Kysely<unknown>): Promise<void> {
 }
 ```
 
-**Step 3:** Add a script to `package.json` in the database package:
+**Step 3:** Add a script to `package.json` in the `database` package (not the top level `package.json`):
 
 ```json
 {
@@ -442,11 +417,10 @@ export async function seed(db: Kysely<unknown>): Promise<void> {
 }
 ```
 
-**Step 4:** Run the seed:
+**Step 4:** Run the seed. From the top-level of your repository, run:
 
 ```bash
-cd packages/database
-pnpm db:seed
+pnpm --filter database db:seed
 ```
 
 <div class="primer-spec-callout info" markdown="1">
@@ -454,6 +428,18 @@ pnpm db:seed
 </div>
 
 You should see output indicating the puzzles were loaded!
+
+### Exercise 4.3: Test Your Database Layer
+
+Find the `db-example.ts` file in the `apps/local-cli/src` folder. This is a sample file that interacts with the database layer for players. Add a couple lines:
+- At the top: `import { getPuzzlesByDifficulty } from "@repo/database/sudoku_puzzles";`
+- At the beginning of main: `console.log(getPuzzlesByDifficulty(0));`
+
+Now, run `pnpm start:db-example`.
+
+Oops... we forgot to `await` the result! Add the missing `await` and try again. You should see an array of easy puzzles printed to the console. Nice!
+
+
 
 ## Part 5: Serializing and Deserializing JSON Data
 
