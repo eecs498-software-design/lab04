@@ -449,7 +449,7 @@ Find the `db-example.ts` file in the `apps/local-cli/src` folder. This is a samp
 
 Now, run `pnpm start:db-example`.
 
-Oops... we forgot to `await` the result! Add the missing `await` and try again. You should see an array of easy puzzles printed to the console. Nice!
+Oops... we forgot to `await` the result! Modify that to `console.log(await getPuzzlesByDifficulty(0));`. Now run `pnpm start:db-example` again. You should see an array of easy puzzles printed to the console. Nice!
 
 
 
