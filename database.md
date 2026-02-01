@@ -117,7 +117,7 @@ From the `packages/database` directory, you can run migrations (from the top lev
 pnpm db:migrate
 ```
 
-This runs all pending migrations on the current database instance. Kysely tracks which migrations have already been applied in a special `kysely_migration` table, so each migration only runs if it hasn't already. Try running `pnpm db:migrate` a few times again and observe that it says no new migrations are found.
+This runs all pending migrations on the current database instance. Kysely tracks which migrations have already been applied in a special `kysely_migration` table, so each migration only runs if it hasn't already. Try running `pnpm db:migrate` again and observe that it says no new migrations are found.
 
 Hypothetically, if you wanted to revert the last migration, you could run:
 
@@ -130,6 +130,20 @@ pnpm --filter database exec kysely migrate:down
 For example, if you're playing around with potential changes to the database schema and realize you made a mistake, you can take the most recent migration down. However, be careful with this command in practice - reverting migrations can lead to data loss if the migration involved dropping tables or columns. You also almost never want to do this after migrations have been committed to version control or applied to production databases, as it can lead to inconsistencies.
 
 The command to run a down migration is a bit different. For other scripts, including `db:migrate`, we've included top-level scripts defined in the `package.json` at the top level of the repository that correspond to turborepo tasks defined in `turbo.json`. These automatically run a script in all individual packages throughout the whole repository. Even though you might not usually have several database packages, it seems reasonable to have a base-level script that just brings them all up to the latest migration. On the other hand, an operation like `db:migrate:down` only makes sense if you target a specific packge, thus the use of `pnpm --filter` in the command above.
+
+If you would like, you can add a script to your `package.json` in the `database` package (not the top level `package.json`) for convenience:
+
+```json
+{
+  "scripts": {
+    "db:migrate": "kysely migrate:latest",
+    "db:migrate:down": "kysely migrate:down",
+    "db:generate": "kysely-codegen"
+  }
+}
+```
+
+Then you can run `pnpm --filter database db:migrate:down` to revert the last migration (instead of the slightly more verbose command above).
 
 If you want, you can also try deleting the entire `database.sqlite` file and running `pnpm db:migrate` again to see the migrations applied from scratch. (Don't do this if you have already started working on the project and have stuff in the database you want to keep!)
 
@@ -199,24 +213,28 @@ Whenever you need to change your database schema, follow this workflow:
 4. **Regenerate types** - `pnpm db:generate`
 5. **Update your database layer** - Add or modify functions in your layer files.
 
+If you realize that you made a mistake in a migration that **hasn't been committed or applied beyond your local dev database yet**, you can revert it with `pnpm --filter database db:migrate:down`, fix the migration file, and then run `pnpm db:migrate` again. Afterward, don't forget to regenerate types with `pnpm db:generate`. If the migration has already been committed or applied to other databases, it's better to create a new "forward" migration that corrects the mistake.
+
 ## Part 3: Kysely's Fluent Builder Interface
 
-Kysely uses a **fluent builder pattern** where you chain method calls to construct queries. Each method returns a new query builder, allowing you to compose complex queries step by step.
+Kysely uses a **fluent builder pattern** where you chain method calls to construct queries. Each method returns a new query builder, allowing you to compose complex queries step by step. Here are some examples using the `players` table provided with the project starter code. When you're learning, we highly suggest you rely on intellisense/autocomplete in your IDE to explore available methods and their signatures.
 
 ### SELECT Queries
 
+Use `.selectFrom()` to build SELECT queries. Note that `.select()` or `.selectAll()` specify which columns to retrieve, whereas a `where` clause specifies which rows to return.
+
 ```typescript
-// Basic select
+// Basic select from players table
 const allPlayers = await DATABASE.selectFrom('players')
   .selectAll()
-  .execute();
+  .execute(); // Returns array of objects
 
-// Select specific columns
+// Select specific columns from players table
 const playerNames = await DATABASE.selectFrom('players')
   .select(['player_id', 'display_name'])
-  .execute();
+  .execute(); // Returns array of objects
 
-// With a WHERE clause
+// Select just one player by ID using a WHERE clause
 const player = await DATABASE.selectFrom('players')
   .selectAll()
   .where('player_id', '=', 'alice123')
@@ -225,7 +243,10 @@ const player = await DATABASE.selectFrom('players')
 
 ### INSERT Queries
 
+Use `.insertInto()` to build INSERT queries. The type system ensures you provide values for all required columns (except auto-generated ones like primary keys or created/updated timestamps). Values for optional columns may be omitted.
+
 ```typescript
+// Add a new player with the given ID and display name
 await DATABASE.insertInto('players')
   .values({
     player_id: 'bob456',
@@ -236,7 +257,10 @@ await DATABASE.insertInto('players')
 
 ### UPDATE Queries
 
+Use `.updateTable()` to build UPDATE queries. Typically, you'll want to include a `where` clause to specify which rows to update (it's rare that you want to make some blanket update to all rows).
+
 ```typescript
+// Update the display name of a player with the given ID
 await DATABASE.updateTable('players')
   .set({ display_name: 'Robert' })
   .where('player_id', '=', 'bob456')
@@ -245,13 +269,31 @@ await DATABASE.updateTable('players')
 
 ### DELETE Queries
 
+Use `.deleteFrom()` to build DELETE queries. Be careful with this! You almost always want to include a `where` clause (unless you literally want to delete all rows).
+
 ```typescript
+// Remove the player with the given ID (we presume it
+// is "the" player since player_id is the primary key).
 await DATABASE.deleteFrom('players')
   .where('player_id', '=', 'bob456')
+  .execute();
+
+// Remove all players with display name 'Admin' since that's
+// a confusing name for players to have.
+await DATABASE.deleteFrom('players')
+  .where('display_name', '=', 'Admin')
+  .execute();
+
+// Remove all players whose name contains "skibidi" (case insensitive)
+// because I'm too old to understand these memes.
+await DATABASE.deleteFrom('players')
+  .where('display_name', 'like', '%skibidi%')
   .execute();
 ```
 
 ### JOINs
+
+Chain `.innerJoin()` after `.selectFrom()` to JOIN multiple tables together based on related columns. This is useful for querying related data across tables. 
 
 ```typescript
 // If we had a table tracking which players have completed which puzzles...
@@ -266,13 +308,19 @@ const completedPuzzles = await DATABASE.selectFrom('puzzle_completions')
   .execute();
 ```
 
+You can find more examples at [https://kysely.dev/docs/category/examples](https://kysely.dev/docs/category/examples).
+
 **Hey** - if we're being honest, AI-based autocomplete tools are pretty good at writing Kysely queries for us (and indeed, often they are even better here than with SQL given more feedback from the type system). But it's still important to understand the underlying concepts so you can verify correctness and debug issues when they arise. And, given the declarative nature of these queries, just make sure you take some time to earnestly read and think through what it's doing.
+
+Take a look at this query that Gemini literally suggested to Prof. Juett while he was double checking one of the above examples... This would not allow you to "see how many rows you're about to delete" - it just immediately deletes them and returns the count of deleted rows. Oops!
+
+![Gemini suggested a query that would result in data loss](gemini_bad_suggestion.png)
 
 
 
 ### Type Safety with Selectable, Insertable, and Updateable
 
-Kysely provides utility types that help you write type-safe database layer functions. These types come from Kysely and are applied to your generated schema types. The table below summarizes the main ones, and you can follow examples in the starter code.
+Kysely provides utility types that help you write type-safe database layer functions. These types come from Kysely and are applied to your generated schema types. The table below summarizes the main ones, and you can follow examples in the starter code for your project.
 
 | Type | Purpose | Example Use |
 |------|---------|-------------|
@@ -327,7 +375,9 @@ export async function insertPuzzle(puzzle: Insertable<Schema['sudoku_puzzles']>)
 }
 ```
 
-Don't forget to export these functions from your package! Add an export for `sudoku_puzzles` in the `packages/database/package.json`. Make sure to get the right `package.json` file - there are several, and you don't want this in the top-level one.
+**Important!** Each of these functions is declared as `async`, and in all of the functions above, we return the result of executing the query. What's going on here? Executing the query is a non-blocking, asynchronous operation that returns a `Promise`. We immediately return that promise, which represents the asynchronous result of the query. The caller can then `await` the promise to get the actual result when it's ready. This is important even if it's something like an INSERT operation that doesn't return any data - the caller might still want to `await` it and only move on once the insert has finished.
+
+Once you've finished filling in implementations, don't forget to export these functions from your package! Add an export for `sudoku_puzzles` in the `package.json` in the `database` package. Make sure to get the right `package.json` file - there are several, and you don't want this in the top-level one.
 
 ```json
 {
@@ -340,9 +390,9 @@ Don't forget to export these functions from your package! Add an export for `sud
 
 ### Exercise 4.2: Load Puzzles Using a Seed File
 
-Now let's load the puzzles from `sudoku_puzzles.txt` into the database. If you don't have that file, copy it from the project 1 distribution or from the lab 4 repository.
+Now let's load the puzzles from `sudoku_puzzles.txt` into the database. If you don't have that file in your project 2 repository, copy it from the project 1 distribution or from this lab 4 repository.
 
-Kysely supports **seed files**, scripts that populate your database with initial data. While migrations are for the database's schema (i.e. the "shape" of the data), seeds are for the actual data itself. Seeds are also critically different in that they're always dependent on the current schema, whereas migrations evolve the schema itself. This means that you might need to update seeds if the schema changes - if we added some new metadata to each sudoku puzzle, that would involve a database migration to create a new column for it and updates to the seed to repopulate that data.
+Kysely supports **seeds**, which are scripts that populate your database with initial data. While migrations are for the database's schema (i.e. the "shape" of the data), seeds are for the actual data itself. Seeds are also critically different in that they're always dependent on the current schema, whereas migrations evolve the schema itself. This means that you might need to update seeds if the schema changes. For example, if we added some new metadata to each sudoku puzzle, that would involve a database migration to create a new column for it, and we would need to update our seeds to include data for that column.
 
 **Step 1:** First, enable seeds in `kysely.config.ts` by uncommenting and updating the seeds configuration. IMPORTANT - also make sure to adjust the seeds directory to `src/seeds`, not just `seeds`:
 
@@ -358,9 +408,9 @@ export default defineConfig({
   migrations: {
     migrationFolder: "src/migrations",
   },
-  seeds: {
-    seedFolder: "src/seeds",
-  }
+  // seeds: { // Uncomment this!
+  //   seedFolder: "src/seeds", // make sure this says src/seeds
+  // }
 })
 ```
 
@@ -447,13 +497,63 @@ Find the `db-example.ts` file in the `apps/local-cli/src` folder. This is a samp
 
 Now, run `pnpm start:db-example`.
 
-Oops... we forgot to `await` the result! Modify that to `console.log(await getPuzzlesByDifficulty(0));`. Now run `pnpm start:db-example` again. You should see an array of easy puzzles printed to the console. Nice!
+Oops... we forgot to `await` the result, so we just see `Promise { <pending> }` (followed by the prompt from the rest of that example file).
 
+Modify that to `console.log(await getPuzzlesByDifficulty(0));`. The `await` here says that we need to wait until the asynchronous result from the database has actually been retrieved.
+
+Now run `pnpm start:db-example` again. You should see an array of easy puzzles printed to the console. Nice!
+
+Feel free to take a look at the rest of the `db-example.ts` file. It shows an interactive loop that contains some of the same elements you'll need for player account management in project 2.
 
 
 ## Part 5: Serializing and Deserializing JSON Data
 
 Sometimes you need to store complex, structured data in a database column. While some databases have native JSON column types, SQLite stores JSON as text. This means you need to manually **serialize** (convert to string with `JSON.stringify()`) when inserting and **deserialize** (parse with `JSON.parse()`) when selecting. You might also notice that the generated type for such a column is just `string`.
 
-Also note that the `JSON.parse()` approach uses a type assertion (`as SudokuBoard`), which means TypeScript trusts you that the data matches the type. If someone manually edited the database with invalid JSON, you'd get a runtime error, or if your game changed and is no longer compatible with structure previously encoded as JSON, you might encounter issues. This is yet another place where validation and error handling could be added for robustness, but you don't need to worry that here for now.
+For example, suppose you chose to represent a saved game state using an interface and that you would like to store it in the database as serialized JSON:
+
+```typescript
+interface SomeGameState {
+  // ... your game state properties here
+}
+```
+
+Then your migration would create a table like this:
+
+```typescript
+await db.schema
+  .createTable("saved_games")
+  // ... other columns ...
+  .addColumn("puzzle_data", "json", (col) => col.notNull())
+  .execute();
+```
+
+When inserting a saved game, you would serialize the game state:
+
+```typescript
+
+async function insertSavedGame(gameState: SomeGameState) {
+  await DATABASE.insertInto('saved_games')
+    .values({
+      puzzle_data: JSON.stringify(gameState)
+    })
+    .execute();
+}
+
+async function getSavedGame(/* ... id of game ... */) {
+  const row = await DATABASE.selectFrom('saved_games')
+    .selectAll()
+    // ... some where clause ...
+    .executeTakeFirst();
+
+  if (!row) {
+    return undefined;
+  }
+
+  return JSON.parse(row.puzzle_data) as SomeGameState;
+}
+```
+
+Also note that the `JSON.parse()` approach uses a type assertion (`as SudokuBoard`), which means TypeScript trusts you that the data matches the type. If someone manually edited the database with invalid JSON, or if your game changed and is no longer compatible with structure previously encoded as JSON, you might encounter issues. This is yet another place where validation and error handling could be added for robustness, but you don't need to worry that here for now.
+
 
