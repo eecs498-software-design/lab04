@@ -122,10 +122,14 @@ This runs all pending migrations on the current database instance. Kysely tracks
 Hypothetically, if you wanted to revert the last migration, you could run:
 
 ```bash
-pnpm db:migrate:down
+pnpm --filter database db:migrate:down
 ```
 
+(**NOTE - the original version of this tutorial included an incorrect command that didn't match the structure of your project repositories.**)
+
 For example, if you're playing around with potential changes to the database schema and realize you made a mistake, you can take the most recent migration down. However, be careful with this command in practice - reverting migrations can lead to data loss if the migration involved dropping tables or columns. You also almost never want to do this after migrations have been committed to version control or applied to production databases, as it can lead to inconsistencies.
+
+The command to run a down migration is a bit different. For other scripts, including `db:migrate`, we've included top-level scripts defined in the `package.json` at the top level of the repository that correspond to turborepo tasks defined in `turbo.json`. These automatically run a script in all individual packages throughout the whole repository. Even though you might not usually have several database packages, it seems reasonable to have a base-level script that just brings them all up to the latest migration. On the other hand, an operation like `db:migrate:down` only makes sense if you target a specific packge, thus the use of `pnpm --filter` in the command above.
 
 If you want, you can also try deleting the entire `database.sqlite` file and running `pnpm db:migrate` again to see the migrations applied from scratch. (Don't do this if you have already started working on the project and have stuff in the database you want to keep!)
 
