@@ -522,7 +522,7 @@ Then your migration would create a table like this:
 await db.schema
   .createTable("saved_games")
   // ... other columns ...
-  .addColumn("puzzle_data", "json", (col) => col.notNull())
+  .addColumn("puzzle_data", "text", (col) => col.notNull()) // For SQLite, use "text" for JSON
   .execute();
 ```
 
@@ -531,7 +531,7 @@ When inserting a saved game, you would serialize the game state:
 ```typescript
 
 async function insertSavedGame(gameState: SomeGameState) {
-  await DATABASE.insertInto('saved_games')
+  return DATABASE.insertInto('saved_games')
     .values({
       puzzle_data: JSON.stringify(gameState)
     })
