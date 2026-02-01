@@ -1,6 +1,4 @@
----
-layout: spec
----
+
 EECS 498 APSD: Database Tutorial
 ===============================
 
