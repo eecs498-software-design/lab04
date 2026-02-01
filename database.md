@@ -122,7 +122,7 @@ This runs all pending migrations on the current database instance. Kysely tracks
 Hypothetically, if you wanted to revert the last migration, you could run:
 
 ```bash
-pnpm --filter database db:migrate:down
+pnpm --filter database exec kysely migrate:down
 ```
 
 (**NOTE - the original version of this tutorial included an incorrect command that didn't match the structure of your project repositories.**)
